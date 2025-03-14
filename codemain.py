@@ -1,40 +1,42 @@
 import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler
 
-# Получаем токен из переменных окружения (чтобы не хранить его в коде)
+# Настраиваем Flask
+app = Flask(__name__)
+
+# Получаем токен бота
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-app.onrender.com/webhook
 
-# Проверяем, что токен есть
-if not BOT_TOKEN:
-    raise ValueError("Токен бота не найден! Укажите его в переменных окружения.")
+if not BOT_TOKEN or not WEBHOOK_URL:
+    raise ValueError("Ошибка: Необходимо задать BOT_TOKEN и WEBHOOK_URL в переменных окружения.")
 
-# Функция обработки команды /start
+bot = Bot(token=BOT_TOKEN)
+
+# Создаём обработчик команд
 async def start(update: Update, context):
-    await update.message.reply_text("Привет! Я простой Telegram-бот. Напиши мне что-нибудь!")
+    await update.message.reply_text("Привет! Бот работает через вебхук.")
 
-# Функция обработки команды /help
-async def help_command(update: Update, context):
-    await update.message.reply_text("Я умею отвечать на сообщения! Просто напиши мне что-нибудь.")
+# Создаём объект Telegram-бота
+app_bot = Application.builder().token(BOT_TOKEN).build()
+app_bot.add_handler(CommandHandler("start", start))
 
-# Функция обработки обычных сообщений
-async def handle_message(update: Update, context):
-    text = update.message.text
-    await update.message.reply_text(f"Ты написал: {text}")
+# Устанавливаем webhook
+@app.route("/set_webhook", methods=["GET"])
+def set_webhook():
+    bot.set_webhook(url=WEBHOOK_URL)
+    return "Webhook установлен!", 200
 
-# Создаём и запускаем бота
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+# Обрабатываем входящие запросы от Telegram
+@app.route("/webhook", methods=["POST"])
+async def webhook():
+    data = request.get_json()
+    update = Update.de_json(data, bot)
+    await app_bot.process_update(update)
+    return "OK", 200
 
-    # Добавляем обработчики команд
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    
-    # Добавляем обработчик текстовых сообщений
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Бот запущен...")
-    app.run_polling()
-
+# Главный запуск сервера Flask
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
